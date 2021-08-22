@@ -284,7 +284,8 @@ run_command ()
 			"$@" >&2
 			RETURN=$?
 		else
-			"$@" >/dev/null 2>&1
+            echo "run: $@"
+			"$@" # >/dev/null 2>&1
 			RETURN=$?
 		fi
 	fi
@@ -910,10 +911,23 @@ do_tag ()
 							${COMMENTOUTPUT:+--comment "$COMMENTOUTPUT"} \
 							);;
 					esac
+                    # fix case when GENREID is 255 (default value when no genre found)
+                    if [ $GENREID -eq 255 ]; then
+                        GENREOPTION=""
+                    else
+                        GENREOPTION="-G $GENREID "
+                    fi
+                    if [ -s "${ABCDETEMPDIR}/$ALBUMARTFILE" ]; then
+                        ALBUMARTOPTION="--add-images=\"${ABCDETEMPDIR}/${ALBUMARTFILE}:FRONT_COVER "
+                    else
+                        ALBUMARTOPTION=" "
+                    fi
 					run_command "tagtrack-$OUTPUT-$1" nice $ENCNICE $TAGGER $TAGGEROPTS \
 						-A "$DALBUM" \
 						-a "$TRACKARTIST" -t "$TRACKNAME" \
-						-G "$GENREID" -n "${TRACKNUM:-$1}" \
+                        -b "$DARTIST"\
+                        ${ALBUMARTOPTION}\
+						"$GENREOPTION"-n "${TRACKNUM:-$1}" \
 						${TRACKNUM:+-N "$TRACKS"} \
 						"${addopts[@]}" \
 						"${ABCDETEMPDIR}/track$1.$OUTPUT"
@@ -1733,6 +1747,8 @@ do_move ()
 					;;
 				*)
 					# mkdir -p shouldn't return an error if the directory already exists
+                    echo "$OUTPUTDIR dir"
+                    echo "creating $OUTPUTFILEDIR dir"
 					mkdir -p "$OUTPUTFILEDIR"
 					run_command "movetrack-$1" mv "${ABCDETEMPDIR}/track$1.$OUTPUT" "$OUTPUTDIR/$OUTPUTFILE.$OUTPUT"
 					if checkstatus "movetrack-output-$OUTPUT"; then :; else
@@ -3203,68 +3219,68 @@ do_getalbumart()
 		GENRE="$(mungegenre "$GENRE")"
 		YEAR=${CDYEAR:-$CDYEAR}
 		# have we got a musicbrainz mbid or amazon asin?
-		case "$CDDBMETHOD" in
-			*musicbrainz*)
-				# try musicbrainz mbid
-				if [ -s "${ABCDETEMPDIR}/mbid.$(checkstatus cddb-choice)" ]; then
-					MBID=$(cat "${ABCDETEMPDIR}/mbid.$(checkstatus cddb-choice)")
-					vecho "trying to get cover from coverartarchive.orq with musicbrainz mbid $MBID" >&2
-					ALBUMARTURL="http://coverartarchive.org/release/$MBID/front"
-					vecho "cover URL: $ALBUMARTURL" >&2
-					$HTTPGET "$ALBUMARTURL" > "${ABCDETEMPDIR}/$ALBUMARTFILE"
-					if [ $? -ne 0 ]; then
-						vecho "could not download cover from musicbrainz" >&2
-						# try amazon asin
-						if [ -s "${ABCDETEMPDIR}/asin.$(checkstatus cddb-choice)" ]; then
-							ASIN=$(cat "${ABCDETEMPDIR}/asin.$(checkstatus cddb-choice)")
-							vecho "trying to get cover from amazon.com with asin $ASIN" >&2
-							ALBUMARTURL="http://ec1.images-amazon.com/images/P/$ASIN.01.LZZZZZZZZ.jpg"
-							vecho "cover URL: $ALBUMARTURL" >&2
-							$HTTPGET "$ALBUMARTURL" > "${ABCDETEMPDIR}/$ALBUMARTFILE"
-							if [ $? -ne 0 ]; then
-								vecho "could not download cover from amazon" >&2
-							else
-								# Check that size is reasonable; sometimes when there is no cover image
-								# on amazon.com a 1x1 pixel gif image will be downloaded instead:
-								FILESIZE=$(wc -c < "${ABCDETEMPDIR}/$ALBUMARTFILE")
-								if [ "$FILESIZE" -lt 1024 ]; then
-									rm "${ABCDETEMPDIR}/$ALBUMARTFILE"
-									vecho "could not download cover from amazon" >&2
-								fi
-							fi
-						else
-							vecho "no amazon ID found" >&2
-						fi
-					fi
-				else
-					vecho "no musicbrainz ID found" >&2
-				fi
-				;;
-		esac
-		# use glyrc
-		if [ ! -s "${ABCDETEMPDIR}/$ALBUMARTFILE" ]; then
-			vecho "trying to get cover with glyrc for $ARTISTFILE / $ALBUMFILE" >&2
-			$GLYRC cover --artist "$ARTISTFILE" --album "$ALBUMFILE" --write "${ABCDETEMPDIR}/$ALBUMARTFILE" $GLYRCOPTS
-			if [ $? -ne 0 ]; then
-				vecho "could not download cover with glyrc" >&2
-			else
-				ALBUMARTURL="glyrc"
-			fi
-		fi
+		# case "$CDDBMETHOD" in
+		# 	*musicbrainz*)
+		# 		# try musicbrainz mbid
+		# 		if [ -s "${ABCDETEMPDIR}/mbid.$(checkstatus cddb-choice)" ]; then
+		# 			MBID=$(cat "${ABCDETEMPDIR}/mbid.$(checkstatus cddb-choice)")
+		# 			vecho "trying to get cover from coverartarchive.orq with musicbrainz mbid $MBID" >&2
+		# 			ALBUMARTURL="http://coverartarchive.org/release/$MBID/front"
+		# 			vecho "cover URL: $ALBUMARTURL" >&2
+		# 			$HTTPGET "$ALBUMARTURL" > "${ABCDETEMPDIR}/$ALBUMARTFILE"
+		# 			if [ $? -ne 0 ]; then
+		# 				vecho "could not download cover from musicbrainz" >&2
+		# 				# try amazon asin
+		# 				if [ -s "${ABCDETEMPDIR}/asin.$(checkstatus cddb-choice)" ]; then
+		# 					ASIN=$(cat "${ABCDETEMPDIR}/asin.$(checkstatus cddb-choice)")
+		# 					vecho "trying to get cover from amazon.com with asin $ASIN" >&2
+		# 					ALBUMARTURL="http://ec1.images-amazon.com/images/P/$ASIN.01.LZZZZZZZZ.jpg"
+		# 					vecho "cover URL: $ALBUMARTURL" >&2
+		# 					$HTTPGET "$ALBUMARTURL" > "${ABCDETEMPDIR}/$ALBUMARTFILE"
+		# 					if [ $? -ne 0 ]; then
+		# 						vecho "could not download cover from amazon" >&2
+		# 					else
+		# 						# Check that size is reasonable; sometimes when there is no cover image
+		# 						# on amazon.com a 1x1 pixel gif image will be downloaded instead:
+		# 						FILESIZE=$(wc -c < "${ABCDETEMPDIR}/$ALBUMARTFILE")
+		# 						if [ "$FILESIZE" -lt 1024 ]; then
+		# 							rm "${ABCDETEMPDIR}/$ALBUMARTFILE"
+		# 							vecho "could not download cover from amazon" >&2
+		# 						fi
+		# 					fi
+		# 				else
+		# 					vecho "no amazon ID found" >&2
+		# 				fi
+		# 			fi
+		# 		else
+		# 			vecho "no musicbrainz ID found" >&2
+		# 		fi
+		# 		;;
+		# esac
+		# # use glyrc
+		# if [ ! -s "${ABCDETEMPDIR}/$ALBUMARTFILE" ]; then
+		# 	vecho "trying to get cover with glyrc for $ARTISTFILE / $ALBUMFILE" >&2
+		# 	$GLYRC cover --artist "$ARTISTFILE" --album "$ALBUMFILE" --write "${ABCDETEMPDIR}/$ALBUMARTFILE" $GLYRCOPTS
+		# 	if [ $? -ne 0 ]; then
+		# 		vecho "could not download cover with glyrc" >&2
+		# 	else
+		# 		ALBUMARTURL="glyrc"
+		# 	fi
+		# fi
 		if [ "$INTERACTIVE" = "y" ]; then
-			if [ -s "${ABCDETEMPDIR}/$ALBUMARTFILE" ]; then
-				# display properties of coverart when identify is available
-				if new_checkexec "$IDENTIFY"; then
-					$IDENTIFY $IDENTIFYOPTS "${ABCDETEMPDIR}/$ALBUMARTFILE" >&2
-				fi
-				# display coverart when DISPLAY is set and display command is available
-				if new_checkexec "$DISPLAYCMD" && [ "$DISPLAY" != "" ]; then
-					$DISPLAYCMD $DISPLAYCMDOPTS "${ABCDETEMPDIR}/$ALBUMARTFILE" >&2 &
-				fi
-			else
-				# nothing downloaded yet
-				vecho "automatic album art downloading failed" >&2
-			fi
+			# if [ -s "${ABCDETEMPDIR}/$ALBUMARTFILE" ]; then
+			# 	# display properties of coverart when identify is available
+			# 	if new_checkexec "$IDENTIFY"; then
+			# 		$IDENTIFY $IDENTIFYOPTS "${ABCDETEMPDIR}/$ALBUMARTFILE" >&2
+			# 	fi
+			# 	# display coverart when DISPLAY is set and display command is available
+			# 	if new_checkexec "$DISPLAYCMD" && [ "$DISPLAY" != "" ]; then
+			# 		$DISPLAYCMD $DISPLAYCMDOPTS "${ABCDETEMPDIR}/$ALBUMARTFILE" >&2 &
+			# 	fi
+			# else
+			# 	# nothing downloaded yet
+			# 	vecho "automatic album art downloading failed" >&2
+			# fi
 			# see if the user can find a better album art manually
 			echo -n "Do you want to enter URL or local path for the album art [y/N]? " >&2
 			read YESNO
@@ -3322,13 +3338,13 @@ do_getalbumart()
 					if [ "$VARIOUSARTISTS" = "y" ] ; then
 						ALBUMARTDIR="$(eval echo "$VAOUTPUTFORMAT")"
 					else
-						ALBUMARTDIR="$(eval echo "$OUTPUTFORMAT")"
+						ALBUMARTDIR="$(eval echo "$OUTPUTFORMAT")/${ALBUMFILE}"
 					fi
 				fi
 				FINALALBUMARTDIR="$(dirname "$OUTPUTDIR/$ALBUMARTDIR")"
 				vecho "copying cover to target directory $FINALALBUMARTDIR" >&2
 				mkdir -p "$FINALALBUMARTDIR"
-				cp "${ABCDETEMPDIR}/$ALBUMARTFILE" "$FINALALBUMARTDIR"
+				cp "${ABCDETEMPDIR}/$ALBUMARTFILE" "$FINALALBUMARTDIR/"
 			done
 			rm -f "${ABCDETEMPDIR}/$ALBUMARTFILE"
 			echo "get-album-art=$ALBUMARTURL" >> "${ABCDETEMPDIR}/status"
@@ -3383,8 +3399,8 @@ do_embedalbumart()
 				do
 				"$EYED3" --add-image "$ALBUMARTFILE":FRONT_COVER "$i"
 				done
-				mkdir "$FINALDIR"/albumart_backup
-				mv "$ALBUMARTFILE" "$FINALDIR"/albumart_backup
+				# mkdir "$FINALDIR"/albumart_backup
+				# mv "$ALBUMARTFILE" "$FINALDIR"/albumart_backup
 				vecho "Successfully embedded the album art into your $OUTPUT tracks" >&2
 			;;
 			flac)
@@ -3392,8 +3408,8 @@ do_embedalbumart()
 				do 
 				"$METAFLAC" --import-picture-from="$ALBUMARTFILE" "$i"
 				done
-				mkdir "$FINALDIR"/albumart_backup
-				mv "$ALBUMARTFILE" "$FINALDIR"/albumart_backup
+				# mkdir "$FINALDIR"/albumart_backup
+				# mv "$ALBUMARTFILE" "$FINALDIR"/albumart_backup
 				vecho "Successfully embedded the album art into your $OUTPUT tracks" >&2
 			;;
 			m4a)
@@ -3401,8 +3417,8 @@ do_embedalbumart()
 				do
 				"$ATOMICPARSLEY" "$i" --artwork "$ALBUMARTFILE" --overWrite 
 				done
-				mkdir "$FINALDIR"/albumart_backup
-				mv "$ALBUMARTFILE" "$FINALDIR"/albumart_backup
+				# mkdir "$FINALDIR"/albumart_backup
+				# mv "$ALBUMARTFILE" "$FINALDIR"/albumart_backup
 				vecho "Successfully embedded the album art into your $OUTPUT tracks" >&2
 				;;
 			wv)
@@ -3410,8 +3426,8 @@ do_embedalbumart()
 				do
 				"$WVTAG" --write-binary-tag "Cover Art (Front)=@$ALBUMARTFILE" "$i"
 				done
-				mkdir "$FINALDIR"/albumart_backup
-				mv "$ALBUMARTFILE" "$FINALDIR"/albumart_backup
+				# mkdir "$FINALDIR"/albumart_backup
+				# mv "$ALBUMARTFILE" "$FINALDIR"/albumart_backup
 				vecho "Successfully embedded the album art into your $OUTPUT tracks" >&2
 				;;
 			ogg)
@@ -3475,8 +3491,8 @@ do_embedalbumart()
 				# note that the header file BUILDHEADER will be reused for each file in the loop:
 				rm "EXPORTTAGS"
 			done
-			mkdir "$FINALDIR"/albumart_backup
-			mv "$ALBUMARTFILE" "$FINALDIR"/albumart_backup
+			# mkdir "$FINALDIR"/albumart_backup
+			# mv "$ALBUMARTFILE" "$FINALDIR"/albumart_backup
 			vecho "Successfully embedded the album art into your $OUTPUT tracks" >&2
 			;;
 			*) vecho "Sorry, abcde does not embed album art for the $OUTPUT container..." >&2
